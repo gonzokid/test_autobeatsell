@@ -17,18 +17,20 @@ from telegram.ext import (
 )
 
 # ============ НАСТРОЙКИ ============
-BOT_TOKEN = "8275158092:AAEuv6319LCcpfZzl--mN0CNIvSOpMIzsl8"
-SUPER_ADMIN_ID = 6756790622
+BOT_TOKEN = "8275158092:AAEuv6319LCcpfZzl--mN0CNIvSOpMIzsl8"  # Новый токен
+SUPER_ADMIN_ID = 6756790622  # Твой Telegram ID
 
 # ============ СОСТОЯНИЯ ============
 (
     MAIN_MENU,
+    SUPER_ADMIN_MENU,
+    ADD_BEATMAKER,
     ADD_BEAT_TITLE,
     ADD_BEAT_BPM,
     ADD_BEAT_KEY,
     ADD_BEAT_MP3,
     ADD_BEAT_PRICE
-) = range(6)
+) = range(8)
 
 # ============ ЛОГИРОВАНИЕ ============
 logging.basicConfig(level=logging.INFO)
@@ -39,6 +41,7 @@ logger = logging.getLogger(__name__)
 
 @dataclass
 class Beat:
+    """Модель бита"""
     id: str
     title: str
     bpm: Optional[int] = None
@@ -50,6 +53,7 @@ class Beat:
 
 @dataclass
 class Beatmaker:
+    """Битмейкер"""
     user_id: int
     channel_id: str
     beats: List[str] = field(default_factory=list)
@@ -90,6 +94,9 @@ class Database:
     def get_beatmaker(self, user_id: int) -> Optional[Beatmaker]:
         return self.beatmakers.get(user_id)
 
+    def get_all_beatmakers(self) -> List[Beatmaker]:
+        return list(self.beatmakers.values())
+
     def add_beat(self, beat: Beat, user_id: int):
         self.beats[beat.id] = beat
         if user_id in self.beatmakers:
@@ -104,17 +111,29 @@ class Database:
 db = Database()
 
 
+# ============ ПРОВЕРКА НА СУПЕРАДМИНА ============
+def is_super_admin(user_id: int) -> bool:
+    return user_id == SUPER_ADMIN_ID
+
+
 # ============ КОМАНДЫ ============
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = update.effective_user.id
     beatmaker = db.get_beatmaker(user_id)
 
-    if user_id == SUPER_ADMIN_ID or beatmaker:
+    if is_super_admin(user_id):
+        text = "👑 **Панель суперадмина**\n\nВыбери действие:"
+        keyboard = [
+            ["👑 Управление битмейкерами"],
+            ["🎵 Панель битмейкера"],
+            ["📊 Статистика"]
+        ]
+    elif beatmaker:
         text = "🎵 **Панель битмейкера**\n\n➕ Добавить бит — выложить новый бит в канал"
         keyboard = [["➕ Добавить бит"]]
     else:
-        text = "👋 Привет! Этот бот для битмейкеров."
+        text = "👋 Привет! Этот бот для битмейкеров.\nЕсли ты битмейкер, обратись к администратору."
         keyboard = [["/start"]]
 
     await update.message.reply_text(
@@ -125,7 +144,126 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     return MAIN_MENU
 
 
+# ============ ПАНЕЛЬ СУПЕРАДМИНА ============
+
+async def super_admin_panel(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    user_id = update.effective_user.id
+    if not is_super_admin(user_id):
+        await update.message.reply_text("⛔ Доступ запрещен!")
+        return MAIN_MENU
+
+    text = "👑 **УПРАВЛЕНИЕ БИТМЕЙКЕРАМИ**\n\n"
+    text += "➕ Добавить битмейкера\n"
+    text += "📋 Список битмейкеров\n"
+    text += "❌ Назад"
+
+    keyboard = [
+        ["➕ Добавить битмейкера"],
+        ["📋 Список битмейкеров"],
+        ["❌ Назад"]
+    ]
+
+    await update.message.reply_text(
+        text,
+        parse_mode=ParseMode.MARKDOWN,
+        reply_markup=ReplyKeyboardMarkup(keyboard, resize_keyboard=True)
+    )
+    return SUPER_ADMIN_MENU
+
+
+async def super_admin_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    text = update.message.text
+    user_id = update.effective_user.id
+
+    if not is_super_admin(user_id):
+        return MAIN_MENU
+
+    if text == "➕ Добавить битмейкера":
+        await update.message.reply_text(
+            "📝 **ДОБАВЛЕНИЕ БИТМЕЙКЕРА**\n\n"
+            "Отправь ID пользователя и @username канала через пробел:\n"
+            "Пример: `6756790622 @channel`",
+            parse_mode=ParseMode.MARKDOWN,
+            reply_markup=ReplyKeyboardMarkup([["❌ Назад"]], resize_keyboard=True)
+        )
+        return ADD_BEATMAKER
+
+    elif text == "📋 Список битмейкеров":
+        beatmakers = db.get_all_beatmakers()
+        if not beatmakers:
+            await update.message.reply_text("📭 Нет битмейкеров")
+        else:
+            msg = "📋 **СПИСОК БИТМЕЙКЕРОВ**\n\n"
+            for bm in beatmakers:
+                msg += f"• ID: {bm.user_id}\n"
+                msg += f"  Канал: {bm.channel_id}\n"
+                msg += f"  Битов: {len(bm.beats)}\n\n"
+            await update.message.reply_text(msg, parse_mode=ParseMode.MARKDOWN)
+
+    elif text == "📊 Статистика":
+        total_beats = len(db.beats)
+        total_beatmakers = len(db.beatmakers)
+        await update.message.reply_text(
+            f"📊 **СТАТИСТИКА**\n\n"
+            f"Битмейкеров: {total_beatmakers}\n"
+            f"Битов: {total_beats}",
+            parse_mode=ParseMode.MARKDOWN
+        )
+
+    elif text == "❌ Назад":
+        return await start(update, context)
+
+    return SUPER_ADMIN_MENU
+
+
+async def add_beatmaker_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if update.message.text == "❌ Назад":
+        return await super_admin_panel(update, context)
+
+    parts = update.message.text.split()
+    if len(parts) != 2:
+        await update.message.reply_text("❌ Неверный формат. Нужно: ID @channel")
+        return ADD_BEATMAKER
+
+    try:
+        user_id = int(parts[0])
+        channel_id = parts[1]
+
+        # Добавляем битмейкера
+        db.add_beatmaker(user_id, channel_id)
+
+        # Отправляем уведомление новому битмейкеру
+        try:
+            await context.bot.send_message(
+                chat_id=user_id,
+                text=f"🎉 **Поздравляю!**\n\n"
+                     f"Теперь ты битмейкер!\n"
+                     f"Твой канал: {channel_id}\n\n"
+                     f"Напиши /start чтобы начать выкладывать биты.",
+                parse_mode=ParseMode.MARKDOWN
+            )
+        except:
+            pass
+
+        await update.message.reply_text(f"✅ Битмейкер {user_id} добавлен с каналом {channel_id}")
+
+    except ValueError:
+        await update.message.reply_text("❌ ID должен быть числом")
+        return ADD_BEATMAKER
+
+    return await super_admin_panel(update, context)
+
+
+# ============ ПАНЕЛЬ БИТМЕЙКЕРА ============
+
 async def add_beat_start(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    user_id = update.effective_user.id
+    beatmaker = db.get_beatmaker(user_id)
+
+    if not beatmaker and not is_super_admin(user_id):
+        await update.message.reply_text("❌ Ты не битмейкер")
+        return MAIN_MENU
+
     context.user_data['new_beat'] = {}
     await update.message.reply_text(
         "🎵 **Название бита:**",
@@ -226,13 +364,22 @@ async def add_beat_price(update: Update, context: ContextTypes.DEFAULT_TYPE):
     )
 
     user_id = update.effective_user.id
-    beatmaker = db.get_beatmaker(user_id) or db.get_beatmaker(SUPER_ADMIN_ID)
+    beatmaker = db.get_beatmaker(user_id)
 
-    if not beatmaker:
+    # Если суперадмин, используем его канал или первый попавшийся
+    if is_super_admin(user_id):
+        # Берем первый канал из списка или создаем тестовый
+        beatmakers = db.get_all_beatmakers()
+        if beatmakers:
+            beatmaker = beatmakers[0]
+        else:
+            await update.message.reply_text("❌ Сначала добавь битмейкера с каналом")
+            return MAIN_MENU
+    elif not beatmaker:
         await update.message.reply_text("❌ Ты не битмейкер")
         return MAIN_MENU
 
-    db.add_beat(beat, user_id)
+    db.add_beat(beat, beatmaker.user_id)
 
     # Публикуем в канал
     caption = f"🔥 **{beat.title}**"
@@ -305,26 +452,6 @@ async def successful_payment(update: Update, context: ContextTypes.DEFAULT_TYPE)
         await update.message.reply_text("❌ Ошибка")
 
 
-# ============ ДОБАВЛЕНИЕ БИТМЕЙКЕРА ============
-
-async def add_beatmaker(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    if update.effective_user.id != SUPER_ADMIN_ID:
-        return
-
-    args = context.args
-    if len(args) != 2:
-        await update.message.reply_text("Использование: /add ID @channel")
-        return
-
-    try:
-        user_id = int(args[0])
-        channel_id = args[1]
-        db.add_beatmaker(user_id, channel_id)
-        await update.message.reply_text(f"✅ Битмейкер {user_id} добавлен с каналом {channel_id}")
-    except:
-        await update.message.reply_text("❌ Ошибка")
-
-
 # ============ MAIN ============
 
 def main():
@@ -332,7 +459,6 @@ def main():
 
     # Команды
     app.add_handler(CommandHandler("start", start))
-    app.add_handler(CommandHandler("add", add_beatmaker))
 
     # Кнопки
     app.add_handler(CallbackQueryHandler(buy_callback, pattern="^buy_"))
@@ -341,10 +467,17 @@ def main():
     app.add_handler(PreCheckoutQueryHandler(pre_checkout))
     app.add_handler(MessageHandler(filters.SUCCESSFUL_PAYMENT, successful_payment))
 
-    # Добавление бита (с разными состояниями)
+    # ConversationHandler
     conv = ConversationHandler(
-        entry_points=[MessageHandler(filters.Regex("^➕ Добавить бит$"), add_beat_start)],
+        entry_points=[
+            MessageHandler(filters.Regex("^👑 Управление битмейкерами$"), super_admin_panel),
+            MessageHandler(filters.Regex("^🎵 Панель битмейкера$"), add_beat_start),
+            MessageHandler(filters.Regex("^➕ Добавить бит$"), add_beat_start),
+        ],
         states={
+            MAIN_MENU: [MessageHandler(filters.TEXT & ~filters.COMMAND, start)],
+            SUPER_ADMIN_MENU: [MessageHandler(filters.TEXT & ~filters.COMMAND, super_admin_handler)],
+            ADD_BEATMAKER: [MessageHandler(filters.TEXT & ~filters.COMMAND, add_beatmaker_handler)],
             ADD_BEAT_TITLE: [MessageHandler(filters.TEXT & ~filters.COMMAND, add_beat_title)],
             ADD_BEAT_BPM: [MessageHandler(filters.TEXT & ~filters.COMMAND, add_beat_bpm)],
             ADD_BEAT_KEY: [MessageHandler(filters.TEXT & ~filters.COMMAND, add_beat_key)],
@@ -357,6 +490,8 @@ def main():
     app.add_handler(conv)
 
     print("🚀 БОТ ЗАПУЩЕН!")
+    print(f"👑 Суперадмин ID: {SUPER_ADMIN_ID}")
+    print(f"✅ Панель суперадмина активна")
     app.run_polling()
 
 
