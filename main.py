@@ -652,10 +652,13 @@ async def add_beat_wav(update: Update, context: ContextTypes.DEFAULT_TYPE):
         context.user_data.pop('new_beat', None)
         return await start(update, context)
 
+    # Проверяем, что это документ
     if update.message.document:
+        # Сохраняем file_id
         context.user_data['new_beat']['wav_file_id'] = update.message.document.file_id
+        logger.info(f"WAV файл сохранен: {update.message.document.file_name}")
     else:
-        await update.message.reply_text("❌ Отправь файл")
+        await update.message.reply_text("❌ Отправь файл (WAV или ZIP)")
         return ADD_BEAT_WAV
 
     await update.message.reply_text(
@@ -670,12 +673,16 @@ async def add_beat_stems(update: Update, context: ContextTypes.DEFAULT_TYPE):
         context.user_data.pop('new_beat', None)
         return await start(update, context)
 
+    # Проверяем, что это документ
     if update.message.document:
+        # Сохраняем file_id
         context.user_data['new_beat']['stems_file_id'] = update.message.document.file_id
+        logger.info(f"Stems файл сохранен: {update.message.document.file_name}")
     else:
         await update.message.reply_text("❌ Отправь ZIP файл")
         return ADD_BEAT_STEMS
 
+    # Переходим к ценам
     beatmaker_id = context.user_data['new_beat']['beatmaker_id']
     beatmaker = db.get_beatmaker(beatmaker_id)
 
