@@ -779,17 +779,13 @@ async def add_beat_stems(update: Update, context: ContextTypes.DEFAULT_TYPE):
             logger.info(f"✅ Распознан архив: {file_ext}")
             context.user_data['new_beat']['stems_file_id'] = file_info.file_id
 
-            await update.message.reply_text(
-                f"✅ Архив получен: {file_name}\n\n"
-                f"💰 **Переходим к настройке цен**",
-                reply_markup=ReplyKeyboardMarkup([["❌ Отмена"]], resize_keyboard=True)
-            )
-
-            # Переходим к ценам
+            # Получаем битмейкера для цен
             beatmaker_id = context.user_data['new_beat']['beatmaker_id']
             beatmaker = db.get_beatmaker(beatmaker_id)
 
+            # Отправляем ОДНО сообщение с подтверждением и сразу запросом цен
             await update.message.reply_text(
+                f"✅ Архив получен: {file_name}\n\n"
                 f"💰 **ЦЕНЫ БИТА**\n\n"
                 f"Текущие цены по умолчанию:\n"
                 f"WAV: {beatmaker.price_wav} ⭐\n"
@@ -803,7 +799,7 @@ async def add_beat_stems(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 parse_mode=ParseMode.MARKDOWN,
                 reply_markup=ReplyKeyboardMarkup([["⏭️ Пропустить", "❌ Отмена"]], resize_keyboard=True)
             )
-            return ADD_BEAT_PRICES
+            return ADD_BEAT_PRICES  # ← ВАЖНО: возвращаем состояние
 
         else:
             logger.warning(f"Неизвестное расширение: {file_ext}")
