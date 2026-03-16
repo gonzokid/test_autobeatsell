@@ -488,7 +488,20 @@ async def pricelist_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 
 # ============ ДОБАВЛЕНИЕ БИТА ============
+async def add_beat_start(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    user_id = update.effective_user.id
+    beatmaker = db.get_beatmaker(user_id)
 
+    if not beatmaker and not is_super_admin(user_id):
+        await update.message.reply_text("❌ Ты не битмейкер")
+        return MAIN_MENU
+
+    context.user_data['new_beat'] = {}
+    await update.message.reply_text(
+        "🎵 **Название бита:**",
+        reply_markup=ReplyKeyboardMarkup([["❌ Отмена"]], resize_keyboard=True)
+    )
+    return ADD_BEAT_TITLE
 async def add_beat_title(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if update.message.text == "❌ Отмена":
         context.user_data.pop('new_beat', None)
@@ -867,9 +880,7 @@ def main():
             MessageHandler(filters.Regex("^👑 Управление битмейкерами$"), super_admin_panel),
             MessageHandler(filters.Regex("^🎵 Моя панель битмейкера$"), beatmaker_menu),
             MessageHandler(filters.Regex("^🎵 Панель битмейкера$"), beatmaker_menu),
-            MessageHandler(filters.Regex("^➕ Добавить бит$"), lambda u, c: beatmaker_menu(u,
-                                                                                          c) if 'current_beatmaker' not in c.user_data else add_beat_title(
-                u, c)),
+            MessageHandler(filters.Regex("^➕ Добавить бит$"), add_beat_start),  # ← ЭТО ИСПРАВЛЕНО
         ],
         states={
             MAIN_MENU: [MessageHandler(filters.TEXT & ~filters.COMMAND, start)],
