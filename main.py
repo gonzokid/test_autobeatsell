@@ -40,7 +40,10 @@ SUPER_ADMIN_ID = 6756790622
 ) = range(15)
 
 # ============ ЛОГИРОВАНИЕ ============
-logging.basicConfig(level=logging.INFO)
+logging.basicConfig(
+    level=logging.DEBUG,
+    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
+)
 logger = logging.getLogger(__name__)
 
 
@@ -489,6 +492,7 @@ async def pricelist_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
 # ============ ДОБАВЛЕНИЕ БИТА ============
 
 async def add_beat_start(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    logger.info("🔥 add_beat_start вызван")
     user_id = update.effective_user.id
     beatmaker = db.get_beatmaker(user_id)
 
@@ -505,6 +509,8 @@ async def add_beat_start(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 
 async def add_beat_title(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    logger.info(f"🔥 add_beat_title вызван с текстом: {update.message.text}")
+
     if update.message.text == "❌ Отмена":
         context.user_data.pop('new_beat', None)
         return await start(update, context)
@@ -518,6 +524,8 @@ async def add_beat_title(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 
 async def add_beat_bpm(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    logger.info(f"🔥 add_beat_bpm вызван с текстом: {update.message.text}")
+
     if update.message.text == "❌ Отмена":
         context.user_data.pop('new_beat', None)
         return await start(update, context)
@@ -539,6 +547,8 @@ async def add_beat_bpm(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 
 async def add_beat_key(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    logger.info(f"🔥 add_beat_key вызван с текстом: {update.message.text}")
+
     if update.message.text == "❌ Отмена":
         context.user_data.pop('new_beat', None)
         return await start(update, context)
@@ -562,6 +572,7 @@ async def add_beat_key(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 async def add_beat_collab(update: Update, context: ContextTypes.DEFAULT_TYPE):
     text = update.message.text
+    logger.info(f"🔥 add_beat_collab вызван с текстом: {text}")
 
     if text == "❌ Отмена":
         context.user_data.pop('new_beat', None)
@@ -611,15 +622,23 @@ async def add_beat_collab(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 
 async def add_beat_mp3(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    logger.info(f"🔥 add_beat_mp3 вызван")
+    logger.info(f"Тип сообщения: {update.message}")
+
     if update.message.text == "❌ Отмена":
         context.user_data.pop('new_beat', None)
         return await start(update, context)
 
-    if not update.message.audio:
+    if update.message.audio:
+        file_id = update.message.audio.file_id
+        file_name = update.message.audio.file_name or "unknown.mp3"
+        logger.info(f"✅ Получен MP3: {file_name}, file_id: {file_id}")
+        context.user_data['new_beat']['mp3_file_id'] = file_id
+    else:
+        logger.warning("❌ Получено не аудио")
         await update.message.reply_text("❌ Отправь аудиофайл")
         return ADD_BEAT_MP3
 
-    context.user_data['new_beat']['mp3_file_id'] = update.message.audio.file_id
     await update.message.reply_text(
         "🖼️ **Отправь обложку для бита (картинку) или нажми 'Пропустить':**",
         reply_markup=ReplyKeyboardMarkup([["⏭️ Пропустить", "❌ Отмена"]], resize_keyboard=True)
@@ -628,57 +647,94 @@ async def add_beat_mp3(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 
 async def add_beat_cover(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    logger.info(f"🔥 add_beat_cover вызван")
+    logger.info(f"Тип сообщения: {update.message}")
+
     if update.message.text == "❌ Отмена":
         context.user_data.pop('new_beat', None)
         return await start(update, context)
 
     if update.message.text == "⏭️ Пропустить":
         context.user_data['new_beat']['cover_file_id'] = None
+        logger.info("🖼️ Обложка пропущена")
     elif update.message.photo:
-        context.user_data['new_beat']['cover_file_id'] = update.message.photo[-1].file_id
+        file_id = update.message.photo[-1].file_id
+        logger.info(f"✅ Получена обложка: {file_id}")
+        context.user_data['new_beat']['cover_file_id'] = file_id
     else:
+        logger.warning("❌ Получено не фото и не команда")
         await update.message.reply_text("❌ Отправь картинку или нажми 'Пропустить'")
         return ADD_BEAT_COVER
 
     await update.message.reply_text(
-        "🎵 **Отправь WAV файл (для выдачи):**",
+        "🎵 **Отправь WAV файл (для выдачи):**\n\n"
+        "📌 Просто отправь файл с расширением .wav",
         reply_markup=ReplyKeyboardMarkup([["❌ Отмена"]], resize_keyboard=True)
     )
     return ADD_BEAT_WAV
 
 
 async def add_beat_wav(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    if update.message.text == "❌ Отмена":
-        context.user_data.pop('new_beat', None)
-        return await start(update, context)
+    logger.info("🔥 add_beat_wav вызван")
+    logger.info(f"Тип сообщения: {update.message}")
+    logger.info(f"Содержимое: {update.message}")
+
+    # Проверяем текстовые сообщения (Отмена)
+    if update.message.text:
+        logger.info(f"Текст: {update.message.text}")
+        if update.message.text == "❌ Отмена":
+            context.user_data.pop('new_beat', None)
+            return await start(update, context)
+        else:
+            # Если пришел текст, но не "Отмена" - значит ошибка
+            await update.message.reply_text("❌ Отправь файл, а не текст")
+            return ADD_BEAT_WAV
 
     # Проверяем, что это документ
     if update.message.document:
-        # Сохраняем file_id
-        context.user_data['new_beat']['wav_file_id'] = update.message.document.file_id
-        logger.info(f"WAV файл сохранен: {update.message.document.file_name}")
-    else:
-        await update.message.reply_text("❌ Отправь файл (WAV или ZIP)")
-        return ADD_BEAT_WAV
+        file_info = update.message.document
+        logger.info(f"📄 Получен документ: {file_info.file_name}")
+        logger.info(f"MIME тип: {file_info.mime_type}")
+        logger.info(f"Размер: {file_info.file_size}")
+        logger.info(f"File ID: {file_info.file_id}")
 
-    await update.message.reply_text(
-        "📦 **Отправь ZIP файл со стэмзами:**",
-        reply_markup=ReplyKeyboardMarkup([["❌ Отмена"]], resize_keyboard=True)
-    )
-    return ADD_BEAT_STEMS
+        # Сохраняем file_id
+        context.user_data['new_beat']['wav_file_id'] = file_info.file_id
+        logger.info(f"✅ WAV файл сохранен: {file_info.file_name}")
+
+        await update.message.reply_text(
+            f"✅ WAV файл получен!\n\n"
+            f"📦 **Отправь ZIP файл со стэмзами:**",
+            reply_markup=ReplyKeyboardMarkup([["❌ Отмена"]], resize_keyboard=True)
+        )
+        return ADD_BEAT_STEMS
+    else:
+        logger.warning("❌ Получено не документ")
+        await update.message.reply_text(
+            "❌ Отправь файл (WAV или ZIP)\n"
+            "📌 Используй кнопку 'Прикрепить файл' в Telegram",
+            reply_markup=ReplyKeyboardMarkup([["❌ Отмена"]], resize_keyboard=True)
+        )
+        return ADD_BEAT_WAV
 
 
 async def add_beat_stems(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    logger.info("🔥 add_beat_stems вызван")
+    logger.info(f"Тип сообщения: {update.message}")
+
     if update.message.text == "❌ Отмена":
         context.user_data.pop('new_beat', None)
         return await start(update, context)
 
-    # Проверяем, что это документ
     if update.message.document:
-        # Сохраняем file_id
-        context.user_data['new_beat']['stems_file_id'] = update.message.document.file_id
-        logger.info(f"Stems файл сохранен: {update.message.document.file_name}")
+        file_info = update.message.document
+        logger.info(f"📄 Получен ZIP: {file_info.file_name}")
+        logger.info(f"File ID: {file_info.file_id}")
+
+        context.user_data['new_beat']['stems_file_id'] = file_info.file_id
+        logger.info(f"✅ ZIP файл сохранен: {file_info.file_name}")
     else:
+        logger.warning("❌ Получено не документ")
         await update.message.reply_text("❌ Отправь ZIP файл")
         return ADD_BEAT_STEMS
 
@@ -699,6 +755,8 @@ async def add_beat_stems(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 
 async def add_beat_prices(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    logger.info(f"🔥 add_beat_prices вызван с текстом: {update.message.text}")
+
     if update.message.text == "❌ Отмена":
         context.user_data.pop('new_beat', None)
         return await start(update, context)
@@ -710,6 +768,7 @@ async def add_beat_prices(update: Update, context: ContextTypes.DEFAULT_TYPE):
         price_wav = beatmaker.price_wav
         price_trackout = beatmaker.price_trackout
         price_exclusive = beatmaker.price_exclusive
+        logger.info(f"💰 Использованы цены по умолчанию: {price_wav}/{price_trackout}/{price_exclusive}")
     else:
         try:
             prices = update.message.text.split()
@@ -718,6 +777,7 @@ async def add_beat_prices(update: Update, context: ContextTypes.DEFAULT_TYPE):
             price_wav = int(prices[0])
             price_trackout = int(prices[1])
             price_exclusive = int(prices[2])
+            logger.info(f"💰 Установлены цены: {price_wav}/{price_trackout}/{price_exclusive}")
         except:
             await update.message.reply_text("❌ Неверный формат. Нужно: 100 200 500")
             return ADD_BEAT_PRICES
@@ -748,6 +808,7 @@ async def add_beat_prices(update: Update, context: ContextTypes.DEFAULT_TYPE):
     )
 
     db.add_beat(beat, beatmaker.user_id)
+    logger.info(f"💾 Бит сохранен в БД: {beat_id}")
 
     caption = f"🔥 **{beat.title}**"
     if beat.bpm:
@@ -764,6 +825,7 @@ async def add_beat_prices(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     try:
         if beat.cover_file_id:
+            logger.info(f"📸 Отправка обложки в канал {beatmaker.channel_id}")
             await context.bot.send_photo(
                 chat_id=beatmaker.channel_id,
                 photo=beat.cover_file_id,
@@ -771,6 +833,7 @@ async def add_beat_prices(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 parse_mode=ParseMode.MARKDOWN
             )
 
+        logger.info(f"🎵 Отправка аудио в канал {beatmaker.channel_id}")
         await context.bot.send_audio(
             chat_id=beatmaker.channel_id,
             audio=beat.mp3_file_id,
@@ -779,7 +842,9 @@ async def add_beat_prices(update: Update, context: ContextTypes.DEFAULT_TYPE):
             reply_markup=get_beat_keyboard(beat.id)
         )
         await update.message.reply_text("✅ Бит выложен в канал!")
+        logger.info("✅ Бит успешно выложен")
     except Exception as e:
+        logger.error(f"❌ Ошибка публикации: {e}")
         await update.message.reply_text(f"❌ Ошибка: {e}\nПроверь, что бот добавлен в канал админом")
 
     context.user_data.pop('new_beat', None)
@@ -919,7 +984,7 @@ def main():
             ADD_BEAT_COLLAB: [MessageHandler(filters.TEXT & ~filters.COMMAND, add_beat_collab)],
             ADD_BEAT_MP3: [MessageHandler(filters.AUDIO, add_beat_mp3)],
             ADD_BEAT_COVER: [MessageHandler(filters.PHOTO | filters.TEXT, add_beat_cover)],
-            ADD_BEAT_WAV: [MessageHandler(filters.Document.ALL, add_beat_wav)],
+            ADD_BEAT_WAV: [MessageHandler(filters.ALL, add_beat_wav)],  # Временно ALL для отладки
             ADD_BEAT_STEMS: [MessageHandler(filters.Document.ALL, add_beat_stems)],
             ADD_BEAT_PRICES: [MessageHandler(filters.TEXT & ~filters.COMMAND, add_beat_prices)],
         },
@@ -931,6 +996,7 @@ def main():
     print("🚀 БОТ ЗАПУЩЕН!")
     print(f"👑 Суперадмин ID: {SUPER_ADMIN_ID}")
     print("✅ Поддерживаются: WAV, Трэкаут, Эксклюзив, Коллабы, Обложки")
+    print("📝 Логирование включено - смотри консоль")
     app.run_polling()
 
 
