@@ -770,9 +770,6 @@ async def add_beat_stems(update: Update, context: ContextTypes.DEFAULT_TYPE):
         file_name = file_info.file_name or "archive.zip"
         file_size = file_info.file_size or 0
         logger.info(f"📦 Получен файл: {file_name}")
-        logger.info(f"MIME тип: {file_info.mime_type}")
-        logger.info(f"Размер: {file_size} байт ({file_size // 1024 // 1024} МБ)")
-        logger.info(f"File ID: {file_info.file_id}")
 
         # Проверяем, что это архив по расширению
         archive_extensions = ['.zip', '.rar', '.7z', '.tar', '.gz', '.bz2', '.xz', '.zst']
@@ -782,23 +779,33 @@ async def add_beat_stems(update: Update, context: ContextTypes.DEFAULT_TYPE):
             logger.info(f"✅ Распознан архив: {file_ext}")
             context.user_data['new_beat']['stems_file_id'] = file_info.file_id
 
-            # Проверяем размер (500 МБ максимум для Telegram)
-            MAX_SIZE = 500 * 1024 * 1024
-            if file_size > MAX_SIZE:
-                await update.message.reply_text(
-                    f"⚠️ Файл очень большой ({file_size // 1024 // 1024} МБ)\n"
-                    f"Telegram может не принять его. Лучше разбей на части.",
-                    reply_markup=ReplyKeyboardMarkup([["❌ Отмена"]], resize_keyboard=True)
-                )
-                # Все равно сохраняем, может проскочит
-            else:
-                await update.message.reply_text(
-                    f"✅ Архив получен: {file_name}\n\n"
-                    f"💰 **Переходим к ценам...**",
-                    reply_markup=ReplyKeyboardMarkup([["❌ Отмена"]], resize_keyboard=True)
-                )
+            await update.message.reply_text(
+                f"✅ Архив получен: {file_name}\n\n"
+                f"💰 **Переходим к настройке цен**",
+                reply_markup=ReplyKeyboardMarkup([["❌ Отмена"]], resize_keyboard=True)
+            )
+
+            # Переходим к ценам
+            beatmaker_id = context.user_data['new_beat']['beatmaker_id']
+            beatmaker = db.get_beatmaker(beatmaker_id)
+
+            await update.message.reply_text(
+                f"💰 **ЦЕНЫ БИТА**\n\n"
+                f"Текущие цены по умолчанию:\n"
+                f"WAV: {beatmaker.price_wav} ⭐\n"
+                f"Трэкаут: {beatmaker.price_trackout} ⭐\n"
+                f"Эксклюзив: {beatmaker.price_exclusive} ⭐\n\n"
+                f"📝 **Что писать:**\n"
+                f"Введи три числа через пробел в формате:\n"
+                f"`WAV Трэкаут Эксклюзив`\n\n"
+                f"Например: `150 300 700`\n"
+                f"Или нажми '⏭️ Пропустить' чтобы оставить текущие цены",
+                parse_mode=ParseMode.MARKDOWN,
+                reply_markup=ReplyKeyboardMarkup([["⏭️ Пропустить", "❌ Отмена"]], resize_keyboard=True)
+            )
+            return ADD_BEAT_PRICES
+
         else:
-            # Если расширение не архивное, но может быть без расширения
             logger.warning(f"Неизвестное расширение: {file_ext}")
             await update.message.reply_text(
                 f"❌ Отправь архив (ZIP, RAR, 7Z и т.д.)\n"
@@ -807,14 +814,6 @@ async def add_beat_stems(update: Update, context: ContextTypes.DEFAULT_TYPE):
             )
             return ADD_BEAT_STEMS
 
-    elif update.message.audio:
-        # Если вдруг прислали аудио вместо архива
-        logger.warning("❌ Получено аудио вместо архива")
-        await update.message.reply_text(
-            "❌ Это аудиофайл. Нужен архив (ZIP, RAR) со стэмзами",
-            reply_markup=ReplyKeyboardMarkup([["❌ Отмена"]], resize_keyboard=True)
-        )
-        return ADD_BEAT_STEMS
     else:
         logger.warning(f"❌ Получен неподдерживаемый тип: {update.message}")
         await update.message.reply_text(
@@ -823,21 +822,6 @@ async def add_beat_stems(update: Update, context: ContextTypes.DEFAULT_TYPE):
             reply_markup=ReplyKeyboardMarkup([["❌ Отмена"]], resize_keyboard=True)
         )
         return ADD_BEAT_STEMS
-
-    # Переходим к ценам
-    beatmaker_id = context.user_data['new_beat']['beatmaker_id']
-    beatmaker = db.get_beatmaker(beatmaker_id)
-
-    await update.message.reply_text(
-        f"💰 **ЦЕНЫ БИТА**\n\n"
-        f"Текущие цены по умолчанию:\n"
-        f"WAV: {beatmaker.price_wav} ⭐\n"
-        f"Трэкаут: {beatmaker.price_trackout} ⭐\n"
-        f"Эксклюзив: {beatmaker.price_exclusive} ⭐\n\n"
-        f"Введи новые цены через пробел или нажми 'Пропустить'",
-        reply_markup=ReplyKeyboardMarkup([["⏭️ Пропустить", "❌ Отмена"]], resize_keyboard=True)
-    )
-    return ADD_BEAT_PRICES
 
 
 async def add_beat_prices(update: Update, context: ContextTypes.DEFAULT_TYPE):
