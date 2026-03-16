@@ -753,22 +753,75 @@ async def add_beat_wav(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 async def add_beat_stems(update: Update, context: ContextTypes.DEFAULT_TYPE):
     logger.info("🔥 add_beat_stems вызван")
-    logger.info(f"Тип сообщения: {update.message}")
 
-    if update.message.text == "❌ Отмена":
-        context.user_data.pop('new_beat', None)
-        return await start(update, context)
+    # Проверяем текстовые сообщения (Отмена)
+    if update.message.text:
+        logger.info(f"Текст: {update.message.text}")
+        if update.message.text == "❌ Отмена":
+            context.user_data.pop('new_beat', None)
+            return await start(update, context)
+        else:
+            await update.message.reply_text("❌ Отправь файл архива")
+            return ADD_BEAT_STEMS
 
+    # Если это документ (архив)
     if update.message.document:
         file_info = update.message.document
-        logger.info(f"📄 Получен ZIP: {file_info.file_name}")
+        file_name = file_info.file_name or "archive.zip"
+        file_size = file_info.file_size or 0
+        logger.info(f"📦 Получен файл: {file_name}")
+        logger.info(f"MIME тип: {file_info.mime_type}")
+        logger.info(f"Размер: {file_size} байт ({file_size // 1024 // 1024} МБ)")
         logger.info(f"File ID: {file_info.file_id}")
 
-        context.user_data['new_beat']['stems_file_id'] = file_info.file_id
-        logger.info(f"✅ ZIP файл сохранен: {file_info.file_name}")
+        # Проверяем, что это архив по расширению
+        archive_extensions = ['.zip', '.rar', '.7z', '.tar', '.gz', '.bz2', '.xz', '.zst']
+        file_ext = os.path.splitext(file_name)[1].lower()
+
+        if file_ext in archive_extensions:
+            logger.info(f"✅ Распознан архив: {file_ext}")
+            context.user_data['new_beat']['stems_file_id'] = file_info.file_id
+
+            # Проверяем размер (500 МБ максимум для Telegram)
+            MAX_SIZE = 500 * 1024 * 1024
+            if file_size > MAX_SIZE:
+                await update.message.reply_text(
+                    f"⚠️ Файл очень большой ({file_size // 1024 // 1024} МБ)\n"
+                    f"Telegram может не принять его. Лучше разбей на части.",
+                    reply_markup=ReplyKeyboardMarkup([["❌ Отмена"]], resize_keyboard=True)
+                )
+                # Все равно сохраняем, может проскочит
+            else:
+                await update.message.reply_text(
+                    f"✅ Архив получен: {file_name}\n\n"
+                    f"💰 **Переходим к ценам...**",
+                    reply_markup=ReplyKeyboardMarkup([["❌ Отмена"]], resize_keyboard=True)
+                )
+        else:
+            # Если расширение не архивное, но может быть без расширения
+            logger.warning(f"Неизвестное расширение: {file_ext}")
+            await update.message.reply_text(
+                f"❌ Отправь архив (ZIP, RAR, 7Z и т.д.)\n"
+                f"Получен файл: {file_name}",
+                reply_markup=ReplyKeyboardMarkup([["❌ Отмена"]], resize_keyboard=True)
+            )
+            return ADD_BEAT_STEMS
+
+    elif update.message.audio:
+        # Если вдруг прислали аудио вместо архива
+        logger.warning("❌ Получено аудио вместо архива")
+        await update.message.reply_text(
+            "❌ Это аудиофайл. Нужен архив (ZIP, RAR) со стэмзами",
+            reply_markup=ReplyKeyboardMarkup([["❌ Отмена"]], resize_keyboard=True)
+        )
+        return ADD_BEAT_STEMS
     else:
-        logger.warning("❌ Получено не документ")
-        await update.message.reply_text("❌ Отправь ZIP файл")
+        logger.warning(f"❌ Получен неподдерживаемый тип: {update.message}")
+        await update.message.reply_text(
+            "❌ Отправь архивный файл (ZIP, RAR, 7Z)\n"
+            "📌 Используй кнопку 'Прикрепить файл' (скрепка)",
+            reply_markup=ReplyKeyboardMarkup([["❌ Отмена"]], resize_keyboard=True)
+        )
         return ADD_BEAT_STEMS
 
     # Переходим к ценам
