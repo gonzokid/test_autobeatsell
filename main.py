@@ -17,11 +17,18 @@ from telegram.ext import (
 )
 
 # ============ НАСТРОЙКИ ============
-BOT_TOKEN = "8275158092:AAEuv6319LCcpfZzl--mN0CNIvSOpMIzsl8"
-SUPER_ADMIN_ID = 6756790622  # Твой Telegram ID
+BOT_TOKEN = "8690704744:AAGTGrQYoE0Su3gbK1BOOxLCk8U6TqB1dnA"
+SUPER_ADMIN_ID = 6756790622
 
 # ============ СОСТОЯНИЯ ============
-MAIN_MENU, ADD_BEAT = range(2)
+(
+    MAIN_MENU,
+    ADD_BEAT_TITLE,
+    ADD_BEAT_BPM,
+    ADD_BEAT_KEY,
+    ADD_BEAT_MP3,
+    ADD_BEAT_PRICE
+) = range(6)
 
 # ============ ЛОГИРОВАНИЕ ============
 logging.basicConfig(level=logging.INFO)
@@ -32,19 +39,17 @@ logger = logging.getLogger(__name__)
 
 @dataclass
 class Beat:
-    """Модель бита"""
     id: str
     title: str
     bpm: Optional[int] = None
     key: Optional[str] = None
     price: int = 100
-    file_id: str = ""  # файл для выдачи
+    file_id: str = ""
     created_at: str = field(default_factory=lambda: datetime.now().isoformat())
 
 
 @dataclass
 class Beatmaker:
-    """Битмейкер"""
     user_id: int
     channel_id: str
     beats: List[str] = field(default_factory=list)
@@ -68,8 +73,7 @@ class Database:
                 data = json.load(f)
                 if filename == "beatmakers.json":
                     return {int(k): Beatmaker(**v) for k, v in data.items()}
-                else:
-                    return {k: Beat(**v) for k, v in data.items()}
+                return {k: Beat(**v) for k, v in data.items()}
         except:
             return {}
 
@@ -104,13 +108,10 @@ db = Database()
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = update.effective_user.id
-
-    # Проверяем, битмейкер ли пользователь
     beatmaker = db.get_beatmaker(user_id)
 
     if user_id == SUPER_ADMIN_ID or beatmaker:
-        text = "🎵 **Панель битмейкера**\n\n"
-        text += "➕ Добавить бит — выложить новый бит в канал"
+        text = "🎵 **Панель битмейкера**\n\n➕ Добавить бит — выложить новый бит в канал"
         keyboard = [["➕ Добавить бит"]]
     else:
         text = "👋 Привет! Этот бот для битмейкеров."
@@ -125,19 +126,12 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 
 async def add_beat_start(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    user_id = update.effective_user.id
-    beatmaker = db.get_beatmaker(user_id)
-
-    if not beatmaker and user_id != SUPER_ADMIN_ID:
-        await update.message.reply_text("❌ Ты не битмейкер")
-        return MAIN_MENU
-
     context.user_data['new_beat'] = {}
     await update.message.reply_text(
         "🎵 **Название бита:**",
         reply_markup=ReplyKeyboardMarkup([["❌ Отмена"]], resize_keyboard=True)
     )
-    return ADD_BEAT
+    return ADD_BEAT_TITLE
 
 
 async def add_beat_title(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -150,49 +144,45 @@ async def add_beat_title(update: Update, context: ContextTypes.DEFAULT_TYPE):
         "⚡ **BPM (или пропусти):**",
         reply_markup=ReplyKeyboardMarkup([["⏭️ Пропустить", "❌ Отмена"]], resize_keyboard=True)
     )
-    return ADD_BEAT
+    return ADD_BEAT_BPM
 
 
 async def add_beat_bpm(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    text = update.message.text
-
-    if text == "❌ Отмена":
+    if update.message.text == "❌ Отмена":
         context.user_data.pop('new_beat', None)
         return await start(update, context)
 
-    if text != "⏭️ Пропустить":
-        try:
-            context.user_data['new_beat']['bpm'] = int(text)
-        except:
-            await update.message.reply_text("❌ Введи число")
-            return ADD_BEAT
-    else:
+    if update.message.text == "⏭️ Пропустить":
         context.user_data['new_beat']['bpm'] = None
+    else:
+        try:
+            context.user_data['new_beat']['bpm'] = int(update.message.text)
+        except ValueError:
+            await update.message.reply_text("❌ Введи число или нажми 'Пропустить'")
+            return ADD_BEAT_BPM
 
     await update.message.reply_text(
         "🎹 **Тональность (или пропусти):**",
         reply_markup=ReplyKeyboardMarkup([["⏭️ Пропустить", "❌ Отмена"]], resize_keyboard=True)
     )
-    return ADD_BEAT
+    return ADD_BEAT_KEY
 
 
 async def add_beat_key(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    text = update.message.text
-
-    if text == "❌ Отмена":
+    if update.message.text == "❌ Отмена":
         context.user_data.pop('new_beat', None)
         return await start(update, context)
 
-    if text != "⏭️ Пропустить":
-        context.user_data['new_beat']['key'] = text
-    else:
+    if update.message.text == "⏭️ Пропустить":
         context.user_data['new_beat']['key'] = None
+    else:
+        context.user_data['new_beat']['key'] = update.message.text
 
     await update.message.reply_text(
         "🎵 **Отправь MP3 файл (демо для канала):**",
         reply_markup=ReplyKeyboardMarkup([["❌ Отмена"]], resize_keyboard=True)
     )
-    return ADD_BEAT
+    return ADD_BEAT_MP3
 
 
 async def add_beat_mp3(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -202,25 +192,23 @@ async def add_beat_mp3(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     if not update.message.audio:
         await update.message.reply_text("❌ Отправь аудиофайл")
-        return ADD_BEAT
+        return ADD_BEAT_MP3
 
     context.user_data['new_beat']['mp3_file_id'] = update.message.audio.file_id
     await update.message.reply_text(
         "💰 **Цена бита в ⭐ (по умолчанию 100):**",
         reply_markup=ReplyKeyboardMarkup([["100", "200", "500"], ["❌ Отмена"]], resize_keyboard=True)
     )
-    return ADD_BEAT
+    return ADD_BEAT_PRICE
 
 
 async def add_beat_price(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    text = update.message.text
-
-    if text == "❌ Отмена":
+    if update.message.text == "❌ Отмена":
         context.user_data.pop('new_beat', None)
         return await start(update, context)
 
     try:
-        price = int(text) if text.isdigit() else 100
+        price = int(update.message.text) if update.message.text.isdigit() else 100
     except:
         price = 100
 
@@ -241,9 +229,8 @@ async def add_beat_price(update: Update, context: ContextTypes.DEFAULT_TYPE):
     beatmaker = db.get_beatmaker(user_id) or db.get_beatmaker(SUPER_ADMIN_ID)
 
     if not beatmaker:
-        # Если битмейкера нет, создаем для суперадмина
-        db.add_beatmaker(SUPER_ADMIN_ID, "@test_channel")
-        beatmaker = db.get_beatmaker(SUPER_ADMIN_ID)
+        await update.message.reply_text("❌ Ты не битмейкер")
+        return MAIN_MENU
 
     db.add_beat(beat, user_id)
 
@@ -354,17 +341,15 @@ def main():
     app.add_handler(PreCheckoutQueryHandler(pre_checkout))
     app.add_handler(MessageHandler(filters.SUCCESSFUL_PAYMENT, successful_payment))
 
-    # Добавление бита
+    # Добавление бита (с разными состояниями)
     conv = ConversationHandler(
         entry_points=[MessageHandler(filters.Regex("^➕ Добавить бит$"), add_beat_start)],
         states={
-            ADD_BEAT: [
-                MessageHandler(filters.TEXT & ~filters.COMMAND, add_beat_title),
-                MessageHandler(filters.TEXT & ~filters.COMMAND, add_beat_bpm),
-                MessageHandler(filters.TEXT & ~filters.COMMAND, add_beat_key),
-                MessageHandler(filters.AUDIO, add_beat_mp3),
-                MessageHandler(filters.TEXT & ~filters.COMMAND, add_beat_price),
-            ]
+            ADD_BEAT_TITLE: [MessageHandler(filters.TEXT & ~filters.COMMAND, add_beat_title)],
+            ADD_BEAT_BPM: [MessageHandler(filters.TEXT & ~filters.COMMAND, add_beat_bpm)],
+            ADD_BEAT_KEY: [MessageHandler(filters.TEXT & ~filters.COMMAND, add_beat_key)],
+            ADD_BEAT_MP3: [MessageHandler(filters.AUDIO, add_beat_mp3)],
+            ADD_BEAT_PRICE: [MessageHandler(filters.TEXT & ~filters.COMMAND, add_beat_price)],
         },
         fallbacks=[CommandHandler("start", start)],
         allow_reentry=True
