@@ -17,7 +17,7 @@ from telegram.ext import (
 )
 
 # ============ НАСТРОЙКИ ============
-BOT_TOKEN = "8690704744:AAGTGrQYoE0Su3gbK1BOOxLCk8U6TqB1dnA"
+BOT_TOKEN = "8275158092:AAEuv6319LCcpfZzl--mN0CNIvSOpMIzsl8"
 SUPER_ADMIN_ID = 6756790622
 
 # ============ СОСТОЯНИЯ ============
