@@ -676,8 +676,6 @@ async def add_beat_cover(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 async def add_beat_wav(update: Update, context: ContextTypes.DEFAULT_TYPE):
     logger.info("🔥 add_beat_wav вызван")
-    logger.info(f"Тип сообщения: {update.message}")
-    logger.info(f"Содержимое: {update.message}")
 
     # Проверяем текстовые сообщения (Отмена)
     if update.message.text:
@@ -686,36 +684,71 @@ async def add_beat_wav(update: Update, context: ContextTypes.DEFAULT_TYPE):
             context.user_data.pop('new_beat', None)
             return await start(update, context)
         else:
-            # Если пришел текст, но не "Отмена" - значит ошибка
-            await update.message.reply_text("❌ Отправь файл, а не текст")
+            await update.message.reply_text("❌ Отправь аудиофайл или документ")
             return ADD_BEAT_WAV
 
-    # Проверяем, что это документ
+    # Если это аудио (Telegram распознал как музыку)
+    if update.message.audio:
+        audio_info = update.message.audio
+        file_name = audio_info.file_name or "audio.wav"
+        logger.info(f"🎵 Получен как AUDIO: {file_name}")
+        logger.info(f"MIME: {audio_info.mime_type}")
+        logger.info(f"File ID: {audio_info.file_id}")
+
+        # Проверяем MIME тип
+        if audio_info.mime_type in ['audio/wav', 'audio/x-wav', 'audio/wave', 'audio/mpeg']:
+            context.user_data['new_beat']['wav_file_id'] = audio_info.file_id
+            await update.message.reply_text(
+                f"✅ Аудио файл получен!\n\n"
+                f"📦 **Отправь ZIP файл со стэмзами:**",
+                reply_markup=ReplyKeyboardMarkup([["❌ Отмена"]], resize_keyboard=True)
+            )
+            return ADD_BEAT_STEMS
+        else:
+            logger.warning(f"Неизвестный MIME тип аудио: {audio_info.mime_type}")
+            # Все равно сохраняем, пользователь знает что отправляет
+            context.user_data['new_beat']['wav_file_id'] = audio_info.file_id
+            await update.message.reply_text(
+                f"✅ Аудио файл получен (нестандартный формат)!\n\n"
+                f"📦 **Отправь ZIP файл со стэмзами:**",
+                reply_markup=ReplyKeyboardMarkup([["❌ Отмена"]], resize_keyboard=True)
+            )
+            return ADD_BEAT_STEMS
+
+    # Если это документ (Telegram не распознал как музыку)
     if update.message.document:
-        file_info = update.message.document
-        logger.info(f"📄 Получен документ: {file_info.file_name}")
-        logger.info(f"MIME тип: {file_info.mime_type}")
-        logger.info(f"Размер: {file_info.file_size}")
-        logger.info(f"File ID: {file_info.file_id}")
+        doc_info = update.message.document
+        file_name = doc_info.file_name or "file.wav"
+        logger.info(f"📄 Получен как DOCUMENT: {file_name}")
+        logger.info(f"MIME: {doc_info.mime_type}")
+        logger.info(f"Размер: {doc_info.file_size}")
+        logger.info(f"File ID: {doc_info.file_id}")
 
-        # Сохраняем file_id
-        context.user_data['new_beat']['wav_file_id'] = file_info.file_id
-        logger.info(f"✅ WAV файл сохранен: {file_info.file_name}")
+        # Проверяем расширение файла
+        if file_name.lower().endswith('.wav'):
+            context.user_data['new_beat']['wav_file_id'] = doc_info.file_id
+            await update.message.reply_text(
+                f"✅ WAV файл получен!\n\n"
+                f"📦 **Отправь ZIP файл со стэмзами:**",
+                reply_markup=ReplyKeyboardMarkup([["❌ Отмена"]], resize_keyboard=True)
+            )
+            return ADD_BEAT_STEMS
+        else:
+            await update.message.reply_text(
+                f"❌ Файл должен иметь расширение .wav\n"
+                f"Получен: {file_name}",
+                reply_markup=ReplyKeyboardMarkup([["❌ Отмена"]], resize_keyboard=True)
+            )
+            return ADD_BEAT_WAV
 
-        await update.message.reply_text(
-            f"✅ WAV файл получен!\n\n"
-            f"📦 **Отправь ZIP файл со стэмзами:**",
-            reply_markup=ReplyKeyboardMarkup([["❌ Отмена"]], resize_keyboard=True)
-        )
-        return ADD_BEAT_STEMS
-    else:
-        logger.warning("❌ Получено не документ")
-        await update.message.reply_text(
-            "❌ Отправь файл (WAV или ZIP)\n"
-            "📌 Используй кнопку 'Прикрепить файл' в Telegram",
-            reply_markup=ReplyKeyboardMarkup([["❌ Отмена"]], resize_keyboard=True)
-        )
-        return ADD_BEAT_WAV
+    # Если что-то другое (например, видео, фото)
+    logger.warning(f"❌ Получен неподдерживаемый тип: {update.message}")
+    await update.message.reply_text(
+        "❌ Отправь WAV файл как аудио или документ\n"
+        "📌 Используй кнопку 'Прикрепить файл' (скрепка)",
+        reply_markup=ReplyKeyboardMarkup([["❌ Отмена"]], resize_keyboard=True)
+    )
+    return ADD_BEAT_WAV
 
 
 async def add_beat_stems(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -984,7 +1017,7 @@ def main():
             ADD_BEAT_COLLAB: [MessageHandler(filters.TEXT & ~filters.COMMAND, add_beat_collab)],
             ADD_BEAT_MP3: [MessageHandler(filters.AUDIO, add_beat_mp3)],
             ADD_BEAT_COVER: [MessageHandler(filters.PHOTO | filters.TEXT, add_beat_cover)],
-            ADD_BEAT_WAV: [MessageHandler(filters.ALL, add_beat_wav)],  # Временно ALL для отладки
+            ADD_BEAT_WAV: [MessageHandler(filters.AUDIO | filters.Document.ALL, add_beat_wav)],
             ADD_BEAT_STEMS: [MessageHandler(filters.Document.ALL, add_beat_stems)],
             ADD_BEAT_PRICES: [MessageHandler(filters.TEXT & ~filters.COMMAND, add_beat_prices)],
         },
