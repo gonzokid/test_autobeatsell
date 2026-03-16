@@ -33,10 +33,11 @@ SUPER_ADMIN_ID = 6756790622
     ADD_BEAT_KEY,
     ADD_BEAT_COLLAB,
     ADD_BEAT_MP3,
+    ADD_BEAT_COVER,
     ADD_BEAT_WAV,
     ADD_BEAT_STEMS,
     ADD_BEAT_PRICES
-) = range(14)
+) = range(15)
 
 # ============ ЛОГИРОВАНИЕ ============
 logging.basicConfig(level=logging.INFO)
@@ -49,7 +50,7 @@ logger = logging.getLogger(__name__)
 class Collab:
     """Участник коллаба"""
     channel: str
-    share: int  # процент участия
+    share: int
 
 
 @dataclass
@@ -60,9 +61,10 @@ class Beat:
     bpm: Optional[int] = None
     key: Optional[str] = None
     collabs: List[Collab] = field(default_factory=list)
-    mp3_file_id: str = ""  # демо для канала
-    wav_file_id: str = ""  # WAV файл для выдачи
-    stems_file_id: str = ""  # ZIP со стэмзами
+    mp3_file_id: str = ""
+    cover_file_id: Optional[str] = None
+    wav_file_id: str = ""
+    stems_file_id: str = ""
     price_wav: int = 100
     price_trackout: int = 200
     price_exclusive: int = 500
@@ -88,7 +90,7 @@ class Purchase:
     user_id: int
     beat_id: str
     beatmaker_id: int
-    type: str  # 'wav', 'trackout', 'exclusive'
+    type: str
     amount: int
     date: str = field(default_factory=lambda: datetime.now().isoformat())
 
@@ -144,7 +146,6 @@ class Database:
         except Exception as e:
             logger.error(f"Ошибка сохранения {filename}: {e}")
 
-    # Битмейкеры
     def add_beatmaker(self, user_id: int, channel_id: str):
         self.beatmakers[user_id] = Beatmaker(
             user_id=user_id,
@@ -165,7 +166,6 @@ class Database:
             self.beatmakers[user_id].price_exclusive = exclusive
             self._save("beatmakers.json", self.beatmakers)
 
-    # Биты
     def add_beat(self, beat: Beat, user_id: int):
         self.beats[beat.id] = beat
         if user_id in self.beatmakers:
@@ -185,7 +185,6 @@ class Database:
     def get_all_beats(self) -> List[Beat]:
         return list(self.beats.values())
 
-    # Покупки
     def add_purchase(self, user_id: int, beat_id: str, beatmaker_id: int, ptype: str, amount: int) -> Purchase:
         purchase_id = str(uuid.uuid4())[:8]
         purchase = Purchase(
@@ -488,6 +487,7 @@ async def pricelist_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 
 # ============ ДОБАВЛЕНИЕ БИТА ============
+
 async def add_beat_start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = update.effective_user.id
     beatmaker = db.get_beatmaker(user_id)
@@ -502,6 +502,8 @@ async def add_beat_start(update: Update, context: ContextTypes.DEFAULT_TYPE):
         reply_markup=ReplyKeyboardMarkup([["❌ Отмена"]], resize_keyboard=True)
     )
     return ADD_BEAT_TITLE
+
+
 async def add_beat_title(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if update.message.text == "❌ Отмена":
         context.user_data.pop('new_beat', None)
@@ -566,14 +568,12 @@ async def add_beat_collab(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return await start(update, context)
 
     if text == "⏭️ Пропустить" or text.lower() == "готово":
-        # Переходим к следующему шагу
         await update.message.reply_text(
             "🎵 **Отправь MP3 файл (демо для канала):**",
             reply_markup=ReplyKeyboardMarkup([["❌ Отмена"]], resize_keyboard=True)
         )
         return ADD_BEAT_MP3
 
-    # Добавляем коллаборатора
     try:
         parts = text.split()
         if len(parts) != 2:
@@ -589,7 +589,6 @@ async def add_beat_collab(update: Update, context: ContextTypes.DEFAULT_TYPE):
         if percent <= 0 or percent > 100:
             await update.message.reply_text("❌ Процент должен быть от 1 до 100")
             return ADD_BEAT_COLLAB
-
 
         context.user_data['new_beat']['collabs'].append({
             'channel': channel,
@@ -621,6 +620,26 @@ async def add_beat_mp3(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return ADD_BEAT_MP3
 
     context.user_data['new_beat']['mp3_file_id'] = update.message.audio.file_id
+    await update.message.reply_text(
+        "🖼️ **Отправь обложку для бита (картинку) или нажми 'Пропустить':**",
+        reply_markup=ReplyKeyboardMarkup([["⏭️ Пропустить", "❌ Отмена"]], resize_keyboard=True)
+    )
+    return ADD_BEAT_COVER
+
+
+async def add_beat_cover(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if update.message.text == "❌ Отмена":
+        context.user_data.pop('new_beat', None)
+        return await start(update, context)
+
+    if update.message.text == "⏭️ Пропустить":
+        context.user_data['new_beat']['cover_file_id'] = None
+    elif update.message.photo:
+        context.user_data['new_beat']['cover_file_id'] = update.message.photo[-1].file_id
+    else:
+        await update.message.reply_text("❌ Отправь картинку или нажми 'Пропустить'")
+        return ADD_BEAT_COVER
+
     await update.message.reply_text(
         "🎵 **Отправь WAV файл (для выдачи):**",
         reply_markup=ReplyKeyboardMarkup([["❌ Отмена"]], resize_keyboard=True)
@@ -657,7 +676,6 @@ async def add_beat_stems(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text("❌ Отправь ZIP файл")
         return ADD_BEAT_STEMS
 
-    # Получаем цены битмейкера
     beatmaker_id = context.user_data['new_beat']['beatmaker_id']
     beatmaker = db.get_beatmaker(beatmaker_id)
 
@@ -697,14 +715,15 @@ async def add_beat_prices(update: Update, context: ContextTypes.DEFAULT_TYPE):
             await update.message.reply_text("❌ Неверный формат. Нужно: 100 200 500")
             return ADD_BEAT_PRICES
 
-    # Сохраняем бит
     beat_data = context.user_data['new_beat']
     beat_id = str(uuid.uuid4())[:8]
 
-
     collabs = []
     for c in beat_data.get('collabs', []):
-        collabs.append(Collab(**c))
+        collabs.append(Collab(
+            channel=c['channel'],
+            share=c['share']
+        ))
 
     beat = Beat(
         id=beat_id,
@@ -713,6 +732,7 @@ async def add_beat_prices(update: Update, context: ContextTypes.DEFAULT_TYPE):
         key=beat_data.get('key'),
         collabs=collabs,
         mp3_file_id=beat_data['mp3_file_id'],
+        cover_file_id=beat_data.get('cover_file_id'),
         wav_file_id=beat_data['wav_file_id'],
         stems_file_id=beat_data['stems_file_id'],
         price_wav=price_wav,
@@ -722,7 +742,6 @@ async def add_beat_prices(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     db.add_beat(beat, beatmaker.user_id)
 
-    # Формируем описание
     caption = f"🔥 **{beat.title}**"
     if beat.bpm:
         caption += f"\n⚡ BPM: {beat.bpm}"
@@ -737,6 +756,14 @@ async def add_beat_prices(update: Update, context: ContextTypes.DEFAULT_TYPE):
     caption += f"Эксклюзив: {beat.price_exclusive}⭐"
 
     try:
+        if beat.cover_file_id:
+            await context.bot.send_photo(
+                chat_id=beatmaker.channel_id,
+                photo=beat.cover_file_id,
+                caption=caption,
+                parse_mode=ParseMode.MARKDOWN
+            )
+
         await context.bot.send_audio(
             chat_id=beatmaker.channel_id,
             audio=beat.mp3_file_id,
@@ -805,7 +832,6 @@ async def successful_payment(update: Update, context: ContextTypes.DEFAULT_TYPE)
         await update.message.reply_text("❌ Ошибка")
         return
 
-    # Находим битмейкера
     beatmaker = None
     for bm in db.beatmakers.values():
         if beat.id in bm.beats:
@@ -816,7 +842,6 @@ async def successful_payment(update: Update, context: ContextTypes.DEFAULT_TYPE)
         await update.message.reply_text("❌ Битмейкер не найден")
         return
 
-    # Сохраняем покупку
     db.add_purchase(
         user_id=update.effective_user.id,
         beat_id=beat_id,
@@ -825,7 +850,6 @@ async def successful_payment(update: Update, context: ContextTypes.DEFAULT_TYPE)
         amount=payment.total_amount
     )
 
-    # Отправляем файлы
     if ptype == 'wav':
         await update.message.reply_document(
             document=beat.wav_file_id,
@@ -864,23 +888,17 @@ async def successful_payment(update: Update, context: ContextTypes.DEFAULT_TYPE)
 def main():
     app = Application.builder().token(BOT_TOKEN).build()
 
-    # Команды
     app.add_handler(CommandHandler("start", start))
-
-    # Кнопки
     app.add_handler(CallbackQueryHandler(buy_callback, pattern="^buy_"))
-
-    # Платежи
     app.add_handler(PreCheckoutQueryHandler(pre_checkout))
     app.add_handler(MessageHandler(filters.SUCCESSFUL_PAYMENT, successful_payment))
 
-    # ConversationHandler
     conv = ConversationHandler(
         entry_points=[
             MessageHandler(filters.Regex("^👑 Управление битмейкерами$"), super_admin_panel),
             MessageHandler(filters.Regex("^🎵 Моя панель битмейкера$"), beatmaker_menu),
             MessageHandler(filters.Regex("^🎵 Панель битмейкера$"), beatmaker_menu),
-            MessageHandler(filters.Regex("^➕ Добавить бит$"), add_beat_start),  # ← ЭТО ИСПРАВЛЕНО
+            MessageHandler(filters.Regex("^➕ Добавить бит$"), add_beat_start),
         ],
         states={
             MAIN_MENU: [MessageHandler(filters.TEXT & ~filters.COMMAND, start)],
@@ -893,6 +911,7 @@ def main():
             ADD_BEAT_KEY: [MessageHandler(filters.TEXT & ~filters.COMMAND, add_beat_key)],
             ADD_BEAT_COLLAB: [MessageHandler(filters.TEXT & ~filters.COMMAND, add_beat_collab)],
             ADD_BEAT_MP3: [MessageHandler(filters.AUDIO, add_beat_mp3)],
+            ADD_BEAT_COVER: [MessageHandler(filters.PHOTO | filters.TEXT, add_beat_cover)],
             ADD_BEAT_WAV: [MessageHandler(filters.Document.ALL, add_beat_wav)],
             ADD_BEAT_STEMS: [MessageHandler(filters.Document.ALL, add_beat_stems)],
             ADD_BEAT_PRICES: [MessageHandler(filters.TEXT & ~filters.COMMAND, add_beat_prices)],
@@ -904,7 +923,7 @@ def main():
 
     print("🚀 БОТ ЗАПУЩЕН!")
     print(f"👑 Суперадмин ID: {SUPER_ADMIN_ID}")
-    print("✅ Поддерживаются: WAV, Трэкаут, Эксклюзив, Коллабы")
+    print("✅ Поддерживаются: WAV, Трэкаут, Эксклюзив, Коллабы, Обложки")
     app.run_polling()
 
 
