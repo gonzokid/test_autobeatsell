@@ -36,7 +36,7 @@ SUPER_ADMIN_ID = 6756790622
     ADD_BEAT_WAV,
     ADD_BEAT_STEMS,
     ADD_BEAT_PRICES
-) = range(15)
+) = range(14)
 
 # ============ ЛОГИРОВАНИЕ ============
 logging.basicConfig(level=logging.INFO)
@@ -577,7 +577,7 @@ async def add_beat_collab(update: Update, context: ContextTypes.DEFAULT_TYPE):
             await update.message.reply_text("❌ Процент должен быть от 1 до 100")
             return ADD_BEAT_COLLAB
 
-        from models import Collab
+
         context.user_data['new_beat']['collabs'].append({
             'channel': channel,
             'share': percent
@@ -688,7 +688,7 @@ async def add_beat_prices(update: Update, context: ContextTypes.DEFAULT_TYPE):
     beat_data = context.user_data['new_beat']
     beat_id = str(uuid.uuid4())[:8]
 
-    from models import Collab
+
     collabs = []
     for c in beat_data.get('collabs', []):
         collabs.append(Collab(**c))
